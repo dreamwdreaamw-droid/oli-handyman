@@ -41,7 +41,13 @@ $('reviewForm').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,b=
 const ownerId='4063c061-e079-4e7a-a02b-d4cc21d5ad68';
 async function emailAction(action,code){const {data:{session}}=await db.auth.getSession();if(!session)throw Error('Sign in first.');const r=await fetch('/.netlify/functions/owner-email',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({action,code})});const result=await r.json();if(!r.ok)throw Error(result.message);return result;}
 function clearMfa(){$('ownerMfa').hidden=true;$('mfaCode').value='';$('mfaStatus').textContent='';}
-async function sendCode(){const b=$('mfaResend');b.disabled=true;try{$('mfaStatus').textContent=(await emailAction('send')).message;}catch(e){$('mfaStatus').textContent=e.message;}finally{setTimeout(()=>b.disabled=false,60000);}}
+let resendTimer=null,resendUntil=0;
+const resendStorageKey='olli-email-resend-until';
+try{resendUntil=Number(sessionStorage.getItem(resendStorageKey))||0;}catch{}
+function updateResend(){const b=$('mfaResend'),seconds=Math.max(0,Math.ceil((resendUntil-Date.now())/1000));b.disabled=seconds>0;b.textContent=seconds>0?`Resend code in ${seconds}s`:'Resend code';if(!seconds&&resendTimer!==null){clearInterval(resendTimer);resendTimer=null;}}
+function startResendTimer(){if(resendTimer!==null)clearInterval(resendTimer);resendTimer=setInterval(updateResend,250);updateResend();}
+async function sendCode(){const b=$('mfaResend');if(b.disabled||Date.now()<resendUntil)return;b.disabled=true;b.textContent='Sending…';try{$('mfaStatus').textContent=(await emailAction('send')).message;}catch(e){$('mfaStatus').textContent=e.message;}finally{resendUntil=Date.now()+60000;try{sessionStorage.setItem(resendStorageKey,String(resendUntil));}catch{}startResendTimer();}}
+startResendTimer();
 async function admin(autoSend=false){
 $('adminPanel').hidden=true;$('adminReviews').replaceChildren();
 const {data:{user},error:userError}=await db.auth.getUser();const allowed=!userError&&user?.id===ownerId;$('ownerLogin').hidden=allowed;
