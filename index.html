@@ -53,7 +53,7 @@ if(aal.currentLevel!=='aal2'){
 $('ownerMfa').hidden=false;
 const {data:factors,error:listError}=await db.auth.mfa.listFactors();if(listError)throw listError;
 const verified=factors.totp.find(f=>f.status==='verified');
-if(verified){factorId=verified.id;$('mfaInstructions').textContent='Enter the code from your authenticator app.';}
+if(verified){$('mfaQr').hidden=true;$('mfaQr').removeAttribute('src');$('mfaSecretLabel').hidden=true;$('mfaSecret').value='';pendingEnrollment=null;factorId=verified.id;$('mfaInstructions').textContent='Enter the code from your authenticator app.';}
 else{
 if(!pendingEnrollment){for(const f of factors.all.filter(f=>f.factor_type==='totp'&&f.status==='unverified')){const {error}=await db.auth.mfa.unenroll({factorId:f.id});if(error)throw error;}const {data,error}=await db.auth.mfa.enroll({factorType:'totp',issuer:'Olli Handyman Bristol'});if(error)throw error;pendingEnrollment=data;}
 factorId=pendingEnrollment.id;$('mfaInstructions').textContent='Scan this QR code with Google Authenticator or another authenticator app, then enter its six-digit code. Keep your setup key private.';
@@ -65,5 +65,15 @@ clearMfa();$('adminPanel').hidden=false;
 const {data,error}=await db.from('reviews').select('*').order('created_at',{ascending:false}).limit(100);$('adminReviews').replaceChildren();if(error){$('adminReviews').textContent=error.message;return;}for(const r of data){const c=card(r),t=document.createElement('textarea');t.value=r.owner_reply||'';t.maxLength=2000;t.placeholder='Reply as Olli';t.setAttribute('aria-label','Owner reply');const b=el('button',r.approved?'Hide review':'Approve review','btn secondary'),save=el('button','Save reply','btn secondary');for(const [button,changes] of [[b,()=>({approved:!r.approved})],[save,()=>({owner_reply:t.value.trim()||null,reply_date:new Date().toISOString()})]]){button.onclick=async()=>{button.disabled=true;const {error}=await db.from('reviews').update(changes()).eq('id',r.id);if(error){$('ownerStatus').textContent=error.message;alert('Unable to save changes.');button.disabled=false;}else{await admin();await load();}};}save.classList.add('save-reply');c.append(el('p',r.approved?'Published':'Pending approval',r.approved?'published-status':'pending-status'),t,save,b);$('adminReviews').append(c);}}
 $('ownerMfa').onsubmit=async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type=submit]');if(!factorId)return;button.disabled=true;try{const {error}=await db.auth.mfa.challengeAndVerify({factorId,code:$('mfaCode').value.trim()});if(error)throw error;await admin();}catch{$('mfaStatus').textContent='Invalid or expired code. Please try again.';}finally{$('mfaCode').value='';button.disabled=false;}};
 $('mfaCancel').onclick=async()=>{await db.auth.signOut();clearMfa();await admin();};
-$('ownerLogin').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget);const {data,error}=await db.auth.signInWithPassword({email:d.get('email'),password:d.get('password')});e.currentTarget.reset();if(error||data.user?.id!=='4063c061-e079-4e7a-a02b-d4cc21d5ad68'){await db.auth.signOut();$('ownerStatus').textContent='Sign-in failed or access denied.';return;}await admin();};$('ownerLogout').onclick=async()=>{await db.auth.signOut();clearMfa();await admin();};load();admin();
+$('ownerLogin').onsubmit=async e=>{
+ e.preventDefault();
+ const form=e.currentTarget, button=form.querySelector('button'), d=new FormData(form);
+ button.disabled=true; $('ownerStatus').textContent='Signing in…';
+ try{
+ const {data,error}=await db.auth.signInWithPassword({email:d.get('email'),password:d.get('password')});
+ if(error||data.user?.id!==ownerId){await db.auth.signOut();throw new Error('Access denied');}
+ form.reset(); $('ownerStatus').textContent=''; await admin();
+ }catch{ $('ownerStatus').textContent='Sign-in failed or access denied. Please try again.'; }
+ finally{button.disabled=false;}
+};$('ownerLogout').onclick=async()=>{await db.auth.signOut();clearMfa();await admin();};load();admin();
 </script></body></html>
